@@ -1,0 +1,127 @@
+﻿@using WebCodeGenerator.Templates.SqlRepository.Services
+@using WebCodeGenerator.Templates.SqlRepository.Models
+@model SqlRepositoryModel
+using Dapper;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
+
+namespace @Model.OutputNamespace
+
+public class @Model.GetRepositoryClassName() : @Model.GetRepositoryInterfaceName()
+{
+    private readonly SqlConnectionString ConnectionString;
+    private readonly ILogger Logger;
+    
+    public @(Model.GetRepositoryClassName())(
+        SqlConnectionString connectionString, 
+        ILogger logger)
+    {
+        this.ConnectionString = connectionString;
+        this.Logger = logger;
+    }
+
+@{
+    var insertCommand = Model.CreateInsertCommand();
+}
+    public async Task InsertAsync(@Model.GetModelName() model)
+    {
+        using var connection = new SqlConnection(ConnectionString.Value);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "@insertCommand.CreateInsertCommand()";
+@foreach (var column in insertCommand.Columns)
+{
+        @:command.Parameters.AddWithValue("@@@column.Name", model.@column.Name);
+}
+
+        await connection.OpenAsync();
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task UpdateAsync(@Model.GetModelName() model)
+    {
+        using var connection = new SqlConnection(ConnectionString.Value);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "@Model.CreateUpdateCommand()";
+@foreach (var column in Model.Columns)
+{
+        @:command.Parameters.AddWithValue("@@@column.Name", model.@column.Name);
+}
+
+        await connection.OpenAsync();
+        await command.ExecuteNonQueryAsync();
+    }
+
+@{
+    var deleteCommand = Model.CreateDeleteCommand();
+}
+    public async Task DeleteAsync(@Model.GetModelName() model)
+    {
+        using var connection = new SqlConnection(ConnectionString.Value);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "@deleteCommand.CreateDeleteCommand()";
+@foreach (var column in deleteCommand.Columns)
+{
+        @:command.Parameters.AddWithValue("@@@column.Name", model.@column.Name);
+}
+
+        await connection.OpenAsync();
+        await command.ExecuteNonQueryAsync();
+    }
+@{
+    var primaryKeyData = Model.GetPrimaryKeyData();
+}
+@if (primaryKeyData.IsSingleColumn())
+{
+    var primaryColumn = primaryKeyData.Columns.First();
+    <text>
+    public async Task<@Model.GetModelName()?> FindAsync(@(primaryColumn.Type.CsharpName)? id)
+    {
+        if (id == null) return null;
+
+        var result = FilterAsync(ids: [id.Value]);
+        return await result.FirstOrDefaultAsync();
+    }
+    </text>
+}
+@{
+    var filterQuery = Model.CreateFilterQuery();
+    var filterColumns = Model.Columns.Select(x => $"{Model.Table.Name}.{x.Name}");
+}
+
+    public async @Html.Raw(filterQuery.GetMethodSignature())
+    {
+        // Setup
+        var joins = new List<string>();
+        var parameters = new Dictionary<string, object>();
+        var filters = new List<string>();
+@if(filterQuery.HasKey())
+{
+        <text>
+        if(ids != null)
+        {{
+            filters.Add("@(filterQuery.SingleKeyColumn.Name) IN @@IDs");
+            parameters.Add("@@IDs", ids);
+        }}
+        </text>
+}
+
+        // Command preparations
+        var select = "SELECT @(string.Join(", ", filterColumns)) FROM @(Model.Table.Schema).@(Model.Table.Name)";
+
+        if(joins.Any())
+            select += Environment.NewLine + string.Join(Environment.NewLine, joins);
+
+        if (filters.Any())
+            select += Environment.NewLine + "WHERE " + string.Join(" AND ", filters);
+
+        // Execution
+        using var connection = new SqlConnection(ConnectionString.Value);
+        var queryResult = connection.QueryUnbufferedAsync<@Model.GetModelName()>(select, parameters);
+
+        await foreach(var item in queryResult)
+            yield return item;
+    }}
+}

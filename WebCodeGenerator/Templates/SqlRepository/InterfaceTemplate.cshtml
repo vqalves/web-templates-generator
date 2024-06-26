@@ -1,0 +1,21 @@
+﻿@using WebCodeGenerator.Templates.SqlRepository.Services
+@using WebCodeGenerator.Templates.SqlRepository.Models
+@model SqlRepositoryModel
+namespace @Model.OutputNamespace
+
+public interface @Model.GetRepositoryInterfaceName()
+{
+    Task InsertAsync(@Model.GetModelName() model);
+    Task UpdateAsync(@Model.GetModelName() model);
+    Task DeleteAsync(@Model.GetModelName() model);
+@{
+    var primaryKeyData = Model.GetPrimaryKeyData();
+    var filterQuery = Model.CreateFilterQuery();
+}
+@if (primaryKeyData.IsSingleColumn())
+{
+    var primaryColumn = primaryKeyData.Columns.First();
+    @:Task<@Model.GetModelName()?> FindAsync(@(primaryColumn.Type.CsharpName)? id)
+}
+    @Html.Raw(filterQuery.GetMethodSignature())
+}
